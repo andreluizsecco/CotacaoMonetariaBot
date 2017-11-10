@@ -2,7 +2,9 @@
 using Microsoft.Bot.Builder.Dialogs;
 using Microsoft.Bot.Builder.Luis;
 using Microsoft.Bot.Builder.Luis.Models;
+using Microsoft.Bot.Connector;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -40,32 +42,74 @@ namespace CotacaoChatBot.Dialogs
         [LuisIntent("moeda.listagem")]
         public async Task MoedaListagem(IDialogContext context, LuisResult result)
         {
+            var message = string.Empty;
             var service = new CotacaoMoeda();
-            var list = await service.Listagem();
+            try
+            {
+                var list = await service.Listagem();
+                var cardActions = new List<CardAction>();
 
-            await context.PostAsync("Moedas disponíveis para consulta:");
+                cardActions.Add(new CardAction()
+                {
+                    Title = $"Todas as cotações",
+                    Type = ActionTypes.ImBack,
+                    Value = $"Cotações do dia"
+                });
 
-            foreach(var item in list)
-                await context.PostAsync($"{item.nome} ({item.moeda})");
+                foreach (var item in list)
+                    cardActions.Add(new CardAction()
+                    {
+                        Title = $"{item.nome} ({item.moeda})",
+                        Type = ActionTypes.ImBack,
+                        Value = $"Cotação {item.nome}"
+                    });
 
+                var card = new HeroCard()
+                {
+                    Title = "Moedas disponíveis",
+                    Subtitle = "Clique na moeda que deseja consultar",
+                    Buttons = cardActions
+                };
+
+                var activity = context.MakeMessage();
+                activity.Id = new Random().Next().ToString();
+                activity.Attachments.Add(card.ToAttachment());
+                
+                await context.PostAsync(activity);
+            }
+            catch(Exception ex)
+            {
+                message = "Desculpe, não consegui buscar essa informação no momento. Se importa de tentar novamente?";
+                await context.PostAsync(message);
+            }
+            
             context.Wait(MessageReceived);
         }
 
         [LuisIntent("moeda.cotacao")]
         public async Task MoedaCotacao(IDialogContext context, LuisResult result)
         {
+            var message = string.Empty;
             var service = new CotacaoMoeda();
-            var moeda = result.Entities.FirstOrDefault(x => x.Type.Equals("Moeda"));
-            await context.PostAsync("Cotações:");
-            
-            var list = await service.Cotacao(moeda?.Entity ?? string.Empty);
-
-            foreach(var cotacao in list)
+            try
             {
-                var dataAtualizacao = new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc).AddSeconds(cotacao.ultima_consulta).ToLocalTime();
-                await context.PostAsync($"{cotacao.nome}: R$ {cotacao.valor.ToString("N4")}");
-                await context.PostAsync($"Data: {dataAtualizacao} | Fonte: {cotacao.fonte}");
+                var moeda = result.Entities.FirstOrDefault(x => x.Type.Equals("Moeda"));
+                message = "Cotações:\n\n";
+
+                var list = await service.Cotacao(moeda?.Entity ?? string.Empty);
+
+                foreach (var cotacao in list)
+                {
+                    var dataAtualizacao = TimeZoneInfo.ConvertTime(new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc).AddSeconds(cotacao.ultima_consulta), TimeZoneInfo.FindSystemTimeZoneById("E. South America Standard Time"));
+                    message += $"**{cotacao.nome}**: R$ {cotacao.valor.ToString("N4")}\n\n";
+                    message += $"Data: {dataAtualizacao.ToString("dd/MM/yyyy HH:mm:ss")} | Fonte: {cotacao.fonte}\n\n";
+                }
             }
+            catch (Exception ex)
+            {
+                message = "Desculpe, não consegui buscar essa informação no momento. Se importa de tentar novamente?";
+            }
+            await context.PostAsync(message);
             context.Wait(MessageReceived);
         }
     }

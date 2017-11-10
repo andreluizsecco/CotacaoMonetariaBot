@@ -59,7 +59,8 @@ namespace CotacaoChatBot.Services
                 });
             }
 
-            var result = await Consultar($"valores?moedas={siglaMoeda}");
+            var url = string.IsNullOrEmpty(siglaMoeda) ? "valores" : $"valores?moedas={siglaMoeda}";
+            var result = await Consultar(url);
 
             foreach (var cotacao in result.valores)
             {
